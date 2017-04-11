@@ -1,0 +1,36 @@
+-*- mode:outline; -*-
+
+* Android
+
+* Build
+** Setup build tools version to be used
+
+*** gradle
+Put the following in build.xml:
+
+----------------------------------------
+android {
+        compileSdkVersion 23
+        buildToolsVersion "23.0.2"
+        ...
+    }
+----------------------------------------
+
+*** ant
+put the following in project.properties:
+
+----------------------------------------
+sdk.buildtools=23.0.2
+----------------------------------------
+
+** Use java 1.7 with ant
+Put the following in ant.properties:
+
+----------------------------------------
+java.target=1.7
+java.source=1.7
+----------------------------------------
+
+** Problems
+*** unsupported major.minor version 52.0
+Take care of the java version of the build environment, and refer to "Setup build tools".
