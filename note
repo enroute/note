@@ -1,8 +1,86 @@
 -*- mode:outline; -*-
 
-* Android
+* Android System
 
-* Build
+** Grant default permission to apps
+Checkout DefaultPermissionGrantPolity.java:
+
+----------------------------------------------------------------------------------------------------
+//frameworks/base/services/core/java/com/Android/server/pm/DefaultPermissionGrantPolicy.java
+
+    public void grantDefaultPermissions(int userId) {
+        grantPermissionsToSysComponentsAndPrivApps(userId);
+        grantDefaultSystemHandlerPermissions(userId);
+    }
+
+    public void grantDefaultSystemHandlerPermissions(userId) {
+        ...
+        // Inserted hook
+        grantDefaultStoragePermission(userId);
+        ...
+    }
+
+    // New function to grant default storage permission
+    private void grantStoragePermissionsToCustomApp(int userId){
+        final String[] packages = mService.mContext.getResources()
+            .getStringArray(com.android.internal.R.array.storage_permission_custom_packagename);
+        for (String pkg : packages) {
+            PackageParser.Package customPackage = getPackageLPr(pkg);
+            if ((customPackage != null) && doesPackageSupportRuntimePermissions(customPackage)) {
+                grantRuntimePermissionsLPw(customPackage, STORAGE_PERMISSIONS, userId);
+            }
+        }
+    }
+
+// xml file containing the package names
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
+  <string-array name="storage_permission_custom_packagename" translatable="false">
+    <item>com.mediatek.datatransfer</item>
+    <item>com.android.defcontainer</item>
+    <item>com.android.calendar</item>
+    <item>com.mediatek.camera</item>
+    <item>com.android.chrome</item>
+    <item>com.android.deskclock</item>
+    <item>com.android.contacts</item>
+    <item>com.android.development</item>
+    <item>com.android.email</item>
+    <item>com.android.fmradio</item>
+    <item>com.facebook.katana</item>
+    <item>com.mediatek.filemanager</item>
+    <item>com.android.gallery3d</item>
+    <item>com.google.android.gm</item>
+    <item>com.google.android.googlequicksearchbox</item>
+    <item>com.google.android.music</item>
+    <item>com.google.android.apps.maps</item>
+    <item>com.android.mms</item>
+    <item>com.cmcm.cmx.pagetwo</item>
+    <item>com.android.dialer</item>
+    <item>com.android.soundrecorder</item>
+    <item>com.google.android.youtube</item>
+    <item>com.android.htmlviewer</item>
+    <item>com.android.launcher3</item>
+    <item>com.mediatek.lbs.em2.ui</item>
+    <item>com.mediatek.wifitest</item>
+    <item>com.mediatek.calendarimporter</item>
+    <item>com.adups.fota</item>
+    <item>com.android.sharedstoragebackup</item>
+    <item>com.android.wallpapercropper</item>
+    <item>com.android.dreams.phototable</item>
+    <item>com.android.inputmethod.latin</item>
+    <item>com.android.exchange</item>
+    <item>com.android.providers.calendar</item>
+    <item>com.mediatek.dataprotection</item>
+    <item>com.mediatek.flp.em</item>
+    <item>com.google.android.gms</item>
+    <item>com.whatsapp</item>
+    <item>com.android.browser</item>
+  </string-array>
+</resources>
+----------------------------------------------------------------------------------------------------
+
+
+* Build Android apps
 ** Setup build tools version to be used
 
 *** gradle
@@ -34,3 +112,432 @@ java.source=1.7
 ** Problems
 *** unsupported major.minor version 52.0
 Take care of the java version of the build environment, and refer to "Setup build tools".
+
+* perl
+** utf8
+本文内容适用于perl 5.8及其以上版本.
+
+在Perl看来, 字符串只有两种形式. 一种是octets, 即8位序列, 也就是我们通常说的字节数组. 另一种utf8编码的字符串, perl管它叫string. 也就是说: Perl只认识两种编码: Ascii(octets)和utf8(string).
+
+utf8 flag
+
+那么perl如何确定一个字符串是octets还是utf8编码的字符串呢? perl可没有什么智能, 他完全是靠字符串上的utf8 flag. 在perl内部, 字符串结构由两部分组成：数据和utf8 flag，比如字符串"中国"在perl内部的存储是这样。
+utf8 flag    数据
+On   中国
+
+如果utf8 flag是On的话, perl就会把中国当成utf8字符串来处理, 如果utf8 flag为Off, perl就会把他当成octets来处理. 所有字符串相关的函数包括正则表达式都会受utf8 flag的影响. 让我们来看个例子:
+use Encode;
+use strict;
+
+my $str = "中国";
+Encode::_utf8_on($str);
+print length($str) . "\n";
+Encode::_utf8_off($str);
+print length($str) . "\n";
+
+运行结果是:
+2
+6
+
+这里我们使用Encode模块的_utf8_on函数和_utf8_off函数来开关字符串"中国"的utf8 flag. 可以看到, utf8 flag打开的时候, "中国"被当成utf8字符串处理, 所以其长度是2. utf8 flag关闭的时候, "中国"被当成octets(字节数组)处理, 出来的长度是6(我的编辑器用的是utf8编码, 如果你的编辑器用的是gb2312编码, 那么长度应该是4).
+
+再来看看正则表达式的例子:
+use Encode;
+use strict;
+
+my $a = "china----中国";
+my $b = "china----中国";
+Encode::_utf8_on($a);
+Encode::_utf8_off($b);
+$a =~ s/\W+//g;
+$b =~ s/\W+//g;
+print $a, "\n";
+print $b, "\n";
+
+运行结果:
+Wide character in print at unicode.pl line 10.
+china中国
+china
+
+结果第一行是一条警告, 这个我们稍后再讨论. 结果的第二行说明, utf8 flag开启的情况下, 正则表达式中的\w能够匹配中文，反之则不能。如何确定一个字符串的utf8 flag是否已开启? 使用Encode::is_utf8($str). 这个函数并不是用来检测一个字符串是不是utf8编码，而是仅仅看看它的utf8 flag是否开启。
+
+eq
+
+eq是一个字符串比较操作符, 只有当字符串的内容一致并且utf8 flag的状态也是一致的时候, eq才会返回真.
+
+理论就是上面这些, 一定要搞明白, 记清楚! 下面是实际应用.
+
+unicode转码
+
+如果你有一个字符串"中国", 它是gb2312编码的. 如果它的utf8 flag是关闭的, 它就会被当成octets来处理, length()会返回4, 这通常不是你想要的. 而如果你开启它的utf8 flag, 则它会被当做utf8编码的字符串来处理. 由于它本来的编码是gb2312的, 不是utf8的, 这就可能导致错误发生. 由于gb2312和utf8内码范围部分重叠, 所以很多时候, 不会有错误报出来, 但是perl可能已经错误地拆解了字符. 严重的时候, perl会报警, 说某个字节不是合法的utf8内码.
+
+解决的方法很显然, 如果你的字符串本来不是utf8编码的, 应该先把它转成utf8编码, 并且使它的utf8 flag处于开启状态. 对于一个gb2312编码的字符串, 你可以使用
+
+程序代码:
+$str = Encode::decode("gbk", $str);
+
+来将其转化为utf8编码并开启utf8 flag. 如果你的字符串编码本来就是utf8, 只是utf8 flag没有打开, 那么你可以使用以下三种方式中的任一种来开启utf8 flag:
+
+程序代码:
+$str = Encode::decode_utf8($str);
+$str = Encode::decode("utf8", $str);
+Encode::_utf8_on($str);
+
+最后一种方式效率最高, 但是官方不推荐. 以下划线开头的函数是内部函数, 出于礼貌, 一般不从外部调用.
+
+字符串连接
+
+. 是字符串连接操作符. 连接两个字符串时, 如果两个字符串的utf8 flag都是Off, 那么结果字符串也是Off. 如果其中任何一个字符串的utf8 flag是On的话, 那么结果字符串的utf8 flag将是On. 连接字符串并不会改变它们原来的编码, 所以如果你把两个不同编码的字符串连在一起, 那么以后不管对这个字符串怎么转码, 都总会有一段是乱码. 这种情况一定要避免, 连接两个字符串之前应该确保它们编码一致. 如有必要, 先进行转码, 再连接字符串.
+
+perl unicode编程基本原则
+
+对于任何要处理的unicode字符串, 1)把它的编码转换成utf8; 2)开启它的utf8 flag
+
+字符串来源
+
+为了应用上面说到的基本原则, 我们首先要知道字符串本来的编码和utf8 flag开关情况, 这里我们讨论几种情况.
+
+1) 命令行参数和标准输入. 从命令行参数或标准输入(STDIN)来的字符串, 它的编码跟locale有关. 如果你的locale是zh_CN或zh_CN.gb2312, 那么进来的字符串就是gb2312编码, 如果你的locale是zh_CN.gbk, 那么进来的编码就是gbk, 如果你的编码是zh_CN.UTF8, 那进来的编码就是utf8. 不管是什么编码, 进来的字符串的utf8 flag都是关闭的状态.
+
+2) 你的源代码里的字符串. 这要看你编写源代码时用的是什么编码. 在editplus里, 你可以通过"文件"->"另存为"查看和更改编码. 在linux下, 你可以cat一个源代码文件, 如果中文正常显示, 说明源代码的编码跟locale是一致的. 源代码里的字符串的utf8 flag同样是关闭的状态.
+
+如果你的源代码里含有中文, 那么你最好遵循这个原则: 1) 编写代码时使用utf8编码, 2)在文件的开头加上use utf8;语句. 这样, 你源代码里的字符串就都会是utf8编码的, 并且utf8 flag也已经打开.
+
+3) 从文件读入. 这个毫无疑问, 你的文件是什么编码, 读进来就是什么编码了. 读进来以后, utf8 flag是off状态.
+
+4) 抓取网页. 网页是什么编码就是什么编码, utf8 flag是off状态. 网站的编码可以从响应头里或者html的<head>标签里获得. 也有可能出现响应头和html head里都没说明编码的情况, 这个就是做的很不礼貌的网页了. 这时候只能用程序来猜:
+use Encode;
+use LWP::Simple qw(get);
+use strict;
+
+my $str = get "http://www.freeoa.net";
+
+eval {my $str2 = $str; Encode::decode("gbk", $str2, 1)};
+print "not gbk: $@\n" if $@;
+
+eval {my $str2 = $str; Encode::decode("utf8", $str2, 1)};
+print "not utf8: $@\n" if $@;
+
+eval {my $str2 = $str; Encode::decode("big5", $str2, 1)};
+print "not big5: $@\n" if $@;
+
+输出:
+
+程序代码:
+not utf8: utf8 "\xD0" does not map to Unicode at /usr/local/lib/perl/5.8.8/Encode.pm line 162.
+
+not big5: big5-eten "\xC8" does not map to Unicode at /usr/local/lib/perl/5.8.8/Encode.pm line 162.
+
+我们给decode函数传递了第三个参数, 要求有异常字符的时候报错. 我们用eval捕获错误, 转码失败说明字符串本来不是这种编码. 另外注意我们每次都把$str拷贝到$str2, 这是因为decode第三个参数为1时, decode以后, 传给它的字符串参数(第二个参数会被清空). 我们拷贝一下, 这样每次被清空的都是$str2, $str不变.
+
+来看结果, 既然不是utf8, 也不是big5, 那就应该是gbk了. 对于其他不知编码的字符串, 也可以使用这种方法来猜. 不过因为几种编码的内码范围都差不多, 所以如果字符串比较短, 就可能出不了异常字符, 所以这个方法只适用于大段的文字.
+
+输出:
+
+字符串在程序内被正确地处理后, 要展现给用户. 这时我们需要把字符串从perl internal form转化成用户能接受的形式. 简单地说, 就是把字符串从utf8编码转换成输出的编码或表现界面的编码. 这时候, 我们使用$str = Encode::encode('charset', $str);. 同样可以分为几种情况.
+
+1) 标准输出. 标准输出的编码跟locale一致. 输出的时候utf8 flag应该关闭, 不然就会出现我们前面看到的那行警告:
+Wide character in print at unicode.pl line 10.
+
+2) GUI程序. 这个应该是不用干什么, utf8编码, utf8 flag开启就行. 没有实际测试过.
+
+3) 做http post. 看网页表单要求什么编码. utf8 flag开或关无所谓, 因为http post发送出去的只是字符串中的数据部分, 不管utf8 flag.
+
+PerlIO
+
+PerlIO为我们的输入/输出转码提供了便利. 它可以针对某个文件句柄, 输入的时候自动帮你转码并开启utf8 flag, 输出的时候, 自动帮你转码并关闭utf8 flag. 假设你的终端locale是gb2312, 看下面的例子:
+use strict;
+binmode(STDIN, ":encoding(gb2312)");
+binmode(STDOUT, ":encoding(gb2312)");
+while (<>) {
+chomp;
+print $_, length, "\n";
+}
+
+运行后输入"中国", 结果:
+中国2
+
+这样我们就省去了输入和输出时转码的麻烦. PerlIO可以作用于任何文件句柄，具体请参考perldoc PerlIO。
+
+相关API
+
+都是Encode模块的:
+$octets = encode(ENCODING, $string [, CHECK]) 把字符串从utf8编码转成指定的编码, 并关闭utf8 flag.
+
+$string = decode(ENCODING, $octets [, CHECK]) 把字符串从其他编码转成utf8编码, 并开启utf8 flag, 不过有个例外就是, 如果字符串是仅仅ascii编码或EBCDIC编码的话, 不开启utf8 flag.
+
+is_utf8(STRING [, CHECK]) 看看utf8 flag是否开启. 如果第二个参数为真, 则同时检查编码是否符合utf8. 这个检测不一定准确, 跟decode方式检测效果一样.
+
+_utf8_on(STRING) 打开字符串的utf flag
+
+_utf8_off(STRING) 关闭字符串的utf flag
+
+最后两个是内部函数，不推荐使用。参考perldoc Encode。
+
+utf8和utf-8
+
+前面我们提到的一直都是utf8. 在perl中, utf8和utf-8是不一样的. utf-8是指国际上标准的utf-8定义, 而utf8是perl在国际标准上做了一些扩展, 能兼容的内码要比国际标准的多一些. perl internal form使用的是utf8. 另外顺便提一下, 字符集的名称是不区分大小写的并且"_"和"-"是等价的.
+
+EBCDIC
+
+EBCDIC是一套遗留的宽字符解决方案, 不同于unicode, 它不是Ascii的超集. 上面介绍的方案并不完全适用于EBCDIC. 关于EBCDIC, 请参考perldoc perlebcdic
+
+Perl中得到汉字和英文长度
+sub length_china(){
+if(@lc=$_=~/[\x80-\xff]{3}|\w/gi){
+return scalar @lc;
+ }
+ }
+
+因为在Perl中汉字有三个字节,做for循环时不方便，所以修改了一下,用上面的方法可以给汉字当成一个字符来处理。
+
+调试Perl脚本时，在print 输出utf-8字符时，日志里会产生大量的"Wide character in print at line ..." 警告信息，比较麻烦。
+
+上网查了一下原因，应该是Perl I/O模块，不能理解utf-8编码，可能缺省情况下，认为输出都应该是iso-8859编码，所以遇到不符合这个规范的编码，就报告一条警告。
+
+perl有个函数binmode()可以解决这个问题。
+
+binmode(STDIN, ':encoding(utf8)');
+binmode(STDOUT, ':encoding(utf8)');
+binmode(STDERR, ':encoding(utf8)');
+
+在实际的情况下，我只是通过STDOUT进行print，所以，我只要设置STDOUT的binmode即可。
+
+在具体的情况下，encoding的参数可以是gbk,big5等。用perl写文本处理程序，或者写服务器端脚本的时候，常常会遇到“Wide character in print” 的警告或者错误。这是因为在程序中处理中文等宽字符时，perl不能识别要处理的内容。
+
+首先要知道perl只能处理两种编码：ascii码和utf-8。ascii码是很少的，像中文、日文、韩文等字符要想能被perl处理，只能用 utf-8编码方式。字符串在perl内部的存储格式如下图：
+
+当flag是1的时候，perl就会把那个字符串当做utf-8编码的字符来处理；如果是0，perl就不能认知字符串中除了 ascii码之外的字符，这个时候，就会报出“Wide character in print”的警告或者错误。
+
+
+举个例子，你要在程序中处理‘当历史成为历史’这个字符串，如果你的程序文件是utf-8编码的话，一般情况下直接处理就行了，因为这时字符串的utf8-flag是打开的。如果你的程序文件是gb2312的话，那么你就需要把那个字符串的utf8-flag打开。但是，一般还会有这样的问题，因为这个字符串是gb2312编码的，所以你要做两件事情：将字符串的编码转为utf-8和打开utf8-flag。
+
+use Encode;
+use strict;
+
+my $str = "当历史成为历史";
+Encode::_utf8_on($str);
+print $str. "\n";
+Encode::_utf8_off($str);
+print $str. "\n";
+
+将上面的这段程序存到文件里，试图运行的时候就会报错：Wide character in print at test.pl line 6。这就是因为utf8-flag被关闭，perl不能识别字符串。当然，在每个处理宽字符的地方加上Encode::_utf8_on函数确实是个解决办法。但是一般来说，在每个地方都加上这样的函数，既在编写程序的时候麻烦，维护的时候更麻烦。
+
+这里还有一个更好的办法：在程序文件的头部加上以下内容
+use utf8;
+binmode(STDIN, ':encoding(utf8)');
+binmode(STDOUT, ':encoding(utf8)');
+binmode(STDERR, ':encoding(utf8)');
+
+utf8转gbk出现问号的分析
+
+有时候我们需要将utf8转成gbk，UTF-8用1到6个字节编码UNICODE字符，收录了超过10万个字符，BMP部分也有六万多个字符。而在进行编码转换时，我们往往需要转换为GBK编码进行后续处理，很多网页在转换后，会发现出现大量连续的问号:????????
+
+这些恶心的问号是在编码转换阶段引入的，原因是：
+GBK字符集只收录了两万多个字符，比UTF-8的字符数量少得多。转化到GBK编码的时候，就会有编码落到GBK字符集以外，不能转化成GBK编码。这部分字符在转换之后的字符串中都变成了’?’
+
+UTF-8：采用变长字节 (1 ASCII, 2 希腊字母和排版字符, 3 汉字等多字节东亚语言, 4 平面符号和特殊符号等)，其中双字节字符中有一些没有在GBK字符集中，通常来说UTF-8无法识别的字符都是非常生僻的字符，几乎难以遇到，可不用考虑；但有一个字符非常特殊：C2A0。
+
+C2A0是 UTF8里的排版用空格区别于ASI =20的空格，这个特殊的字符unicode序号为0xA0，不在GBK字符集中。却频繁用于xml/html等格式的文件中。大量UTF-8编码的网页使用这个字符用作占位的空格。而且不同浏览器对它的处理方式不同：IE浏览器识别出该符号并以空格显示，firefox则替换为xml转义字符 &nbsp; 当网页中用C2A0进行文字排版时，我们对网页进行编码转换为GBK时就会出现很多"？"问号。
+
+处理方法：
+方法一：转换时对文本信息做特殊处理，用0×20代替掉0xC2A0。
+
+方法二：作品XML文件直接以UTF8编码传输。
+
+下面谈一下方法一的perl解决方法：
+
+我们知道，在Perl看来, 字符串只有两种形式。 一种是octets, 即8位序列, 也就是我们通常说的字节数组. 另一种utf8编码的字符串, perl管它叫string。 也就是说: Perl只认识两种编码: Ascii(octets)和utf8(string)。相对应的，方法一也有两种解决方案；脚本都以utf8保存
+
+一、以字节流处理
+即不打开utf8 flag：
+use Encode;
+
+$i='赤足 3.0 12女子跑步鞋 354749-003';#注意中间的空格是0xc2a0
+$i=~s/\xc2\xa0/space/g;
+print encode("gbk",decode("utf8",$i));
+
+二、以utf8 串处理：
+use utf8;
+use Encode;
+
+$i='赤足 3.0 12女子跑步鞋 354749-003';
+my $space = pack("CC", 0xc2, 0xa0);
+Encode::_utf8_on($space);
+$i =~ s/$space/space/g;
+print encode("gbk",$i);
+
+其中4,5行也可以换成：$space = decode("utf8", "\xc2\xa0");
+
+总体原则是，母串和要匹配的要保持一致，要么都打开utf8 flag，要么都不打开。
+
+总结有三种方式可以用来解决"Wide character in print"问题
+
+1、binmode STDOUT, “:utf8″;
+因为程序本身是用utf8编码的（可以用use utf8;明示给Perl），这句话就是告诉Perl输出是utf8编码的。
+
+2、use utf8::all;
+当然，我们需要先安装这个模块utf8::all。一劳永逸，所有涉及字符集编码的地方，此模版都会帮你设置为utf8；
+
+3、encode( ‘utf8′, $_ );
+需要先use Encode;，对CPU有不小的开销。这种处理方法的好处在于可以用于print之外的其它方法出现的上述问题。
+
+以下是转自外文网站的关于此问题文章
+
+Perl 5.8+ has comprehensive support for Unicode and a wide range of different text encodings.  But still many people experience problems when processing multi-language text.  Here I explain the most common problems and offer solutions.
+
+An older version of this article is available.  It is not as well structured, but provides some additional perl version 5.6.1 unicode-related details.You can read this piece and dive into all the technical details and idiosyncrasies of perl and unicode.  Or you can hire me to fix your code.
+
+A bunch of perldoc manpages outline and explain the Perl’s unicode support. perluniintro, perlunicode, Encode module, binmode() function.  And the list is not complete.  The major problem with this documentation is its volume.  Most programmers don’t even have to read it all, because to start working with Unicode you just need to know some basic facts and rules.
+
+I have experienced several kinds of trouble with Unicode in Perl, in several projects.  The two main problems I’ve seen are:
+* UTF-8 data getting double-encoded or other-encoding data getting mangled
+* “Wide character in print” warning
+
+These two problems are closely related and often solved by similar moves.
+
+Reading or at least browsing through the related manpages is still a good way to understand and solve your Unicode problems.  If you don’t have time for that now, read on.
+
+The problem showcase: the example
+Imagine two simple variables with Unicode text in it. And you print those variables to standard output.  What may be easier?..
+my $ustring1 = "Hello \x{263A}!\n";
+my $ustring2 = <DATA>;
+
+print "$ustring1$ustring2";
+__DATA__
+Hello ☺!
+
+Both variables here contain the same data: string "Hello " followed by Unicode character WHITE SMILING FACE U+263A, an exclamation mark and a new-line character.  The __DATA__ part ($ustring2) is UTF-8 encoded.
+
+But when we print it, the first one comes out fine and the second one comes garbled.  This is because Perl knows that the first string is a Unicode string and is internally stored in UTF-8.  But it doesn’t know the encoding of the second.  When it builds a bigger string for printing, it re-encodes the second into UTF-8, wrongly.
+
+In addition, it prints a warning: Wide character in print at unitest1.pl line 6, <DATA> line 1. We’ll look at it later, after we fix our output.
+
+You could apparently fix things by avoiding concatenation:
+my $ustring1 = "Hello \x{263A}!\n";
+my $ustring2 = <DATA>;
+
+print $ustring1, $ustring2;
+__DATA__
+Hello ☺!
+
+But this is not a solution. Sometimes you simply can’t avoid concatenation; it is such a basic operation.  In addition, it is error-prone and not future-proof.
+
+Why the problem happens
+First, some basic facts.
+
+There is a distiction between bytes and characters. Characters are Unicode characters.  One character may be represented by several bytes, when stored, printed or sent over network.  That depends on a particular encoding used. UTF-8 is just one of the ways to do represent Unicode data.
+
+Perl has a “utf8” flag for every scalar value, which may be “on” or “off”. “On” state of the flag tells perl to treat the value as a string of Unicode characters.
+
+If you take a string with utf8 flag off and concatenate it with a string that has utf8 flag on, perl converts the first one to Unicode.
+
+This may sound okay and obvious. But then you think: How? Perl will need to know the encoding of the string data before converting it.  And perl will try to guess it.  And this is the usual source of problems.
+
+The algorithm perl uses when guessing is documented (uses some defaults and maybe checks your locale), but my firm suggestion is: never let perl do that.  Otherwise, there is a BIG chance that you’ll get double-encoded UTF-8 strings, or otherwise mangled data.
+
+The solution: always make data encoding explicit, both for your input and output.
+
+Solution #1: Convert string to Unicode
+One solution could be to tell perl that the $ustring2 contains Unicode data in UTF-8 encoding.  There is a couple of ways to do that; the orthodox way is through Encode’s decode_utf8() function:
+use Encode;
+my $ustring1 = "Hello \x{263A}!\n";
+my $ustring2 = <DATA>;
+$ustring2 = decode_utf8( $ustring2 );
+
+print "$ustring1$ustring2";
+__DATA__
+Hello ☺!
+
+In this simple case both ways would do the job, but may get quite tedious, if your imports are plentiful.  And it still prints the “Wide character” warning.But this is what you should always do for the international data you get from other modules, like from databases.
+
+You should not forget though, that not every sequence of bytes is valid UTF-8.  So the decode_utf8() operation may fail.  See Encode perldoc for error handling details.
+
+Another way to do let perl accept the UTF-8 data as such is with a pack “U0C*”, unpack “C*” hack.If you get data in another encoding (not UTF-8), convert it to Unicode explicitly.  Again, Encode module, decode() function:
+require Encode;
+my $ustring = Encode::decode( 'iso-8859-1', $input );
+
+Another example: UTF-8 data from CGI
+
+In ACIS we produce HTML pages in UTF-8.  We expect the HTML form input to be UTF-8 as well.  To manipulate it, we tell perl about the encoding:
+    require Encode;
+        require CGI;
+            my $query = CGI ->new;
+                my $form_input = {};
+                    foreach my $name ( $query ->param ) {
+                          my @val = $query ->param( $name );
+                                foreach ( @val ) {
+                                        $_ = Encode::decode_utf8( $_ );
+                                              }
+                                                    $name = Encode::decode_utf8( $name );
+                                                          if ( scalar @val == 1 ) {
+                                                                  $form_input ->{$name} = $val[0];
+                                                                        } else {
+                                                                                $form_input ->{$name} = \@val;  # save value as an array ref
+                                                                                      }
+                                                                                          }
+
+This builds a ready- and safe-to-use hash of input parameters.
+
+Solution #2: Specify IO encoding layers for your filehandles
+In Perl 5.8 a filehandle can have an encoding specified for it.  Perl then will convert all input from the file automatically into its internal Unicode encoding.  It will mark the values read from it accordingly with the utf8 flag.  Equally, perl can convert output to a specific encoding for a filehandle.  Additionally, perl checks that the data you output is valid for the filehandle’s encoding.
+
+So, if you read data from a file or another input stream, and you expect UTF-8 data there, warn perl:
+if ( open( FILE, "<:utf8", $fname ) ) {
+. . .
+}
+
+or, in case of our simple test,
+my $ustring1 = "Hello \x{263A}!\n";
+binmode DATA, ":utf8";
+my $ustring2 = <DATA>;
+
+print "$ustring1$ustring2";
+__DATA__
+Hello ☺!
+
+This should print two equal lines and make no annoying warning.Similarly, if you open a file as:
+open FILE, "<:encoding(iso-8859-7)", $filename;
+
+it’s content will be assumed to be in iso-8859-7 encoding.  Perl will use that to interprete file’s data correctly, i.e. to convert it to the internal UTF-8.
+
+Solution #3: Global Unicode setting in Perl
+And there is yet another way to approach your coding/encoding problems.  It is to command perl to treat all your program’s input and output as UTF-8 by default. -C is a perl switch which let’s you do that. Just put -CS on the perl command line.
+
+Alternatively, use PERL_UNICODE environment variable.  It has to be set in the environment where you execute perl, for instance:
+god@world:~$ PERL_UNICODE=S perl script.pl
+
+Would command perl to assume UTF-8 in all input and output filehandles in your script and used modules, by default. (Unfortunately and contrary to my expectations this does not have an impact on the special DATA filehandle. So this is not a solution to our problem showcase script.)
+
+You can also specify UTF-8-ness for just your stdin or just stdout or just stderr.  Read a section on -C in perlrun for full details.
+
+Wide character in print warning
+The warning happens when you output a Unicode string to a non-unicode filehandle. What is a "non-unicode filehandle?", you ask.  That’s the one with no unicode-compatible IO layer on it (see Solution #2 section above.)
+
+The right way to fix this is to specify the output encoding explicitly, with the binmode() function or in your open() call.  For example, open your file this way:
+open FILE, ">:utf8", $filename;
+
+To print UTF-8 to standard output (or standard error), as in our case, we do:
+my $ustring1 = "Hello \x{263A}!\n";
+binmode DATA, ":utf8";
+my $ustring2 = <DATA>;
+binmode STDOUT, ":utf8";
+print "$ustring1$ustring2";
+__DATA__
+Hello ☺!
+
+The wrong way to avoid the warning is to turn off the utf8 flag on your to-be-printed data.  Then the characters will turn into bytes, and perl will push them to a bytes-filehandle smoothly.  But you don’t need that, really.
+
+On the other hand, if you open a file as:
+open FILE, ">:encoding(iso-8859-7)", $filename;
+
+the stuff you print will be output in iso-8859-7 encoding, transcoded automatically.  ISO-8859-7 is not a Unicode-compatible charset, so you won’t be able to output Unicode characters on it without a warning.
+
+The right strategy: summary
+If you can, use a Unicode encoding (such as UTF-8) to store and process your data.  Always make sure perl knows which encoding your data comes in and come out.  Make sure all your Unicode-containing scalars, have the utf8 flag on. Then you can safely concatenate strings.  Then you can use Unicode-related regular expressions, which gives you great powers for international (multi-language) text processing.
+
+To achieve that, you may need to know all the ways data gets into your program.  As soon as you get some input, mark it as Unicode or convert it to Unicode and sleep well.
+
+Sometimes data comes into your program already in Unicode and you shouldn’t worry.  For instance, XML parsers return you string values with the utf8 flag “on”. (Unless you do something weird, like getting it in original form from the parser, which you shouldn’t do anyway.) In the above example we explicitly include a unicode character into a string ($ustring1) and perl knows its encoding.
+
+But when you read data from input streams, from a database or from environment variables (like parameters in CGI), you need to tell perl about its encoding.Use PERL_UNICODE environment variable to force UTF-8 IO layers on your input and/or output filehandles.
